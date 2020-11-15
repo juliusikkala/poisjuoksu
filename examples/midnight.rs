@@ -27,8 +27,12 @@ impl<'a> Painter for SdlPainter<'a> {
 
     fn draw(&mut self, x: i32, y: i32, color: &Self::ColorType) {
         let i = (x as usize) * std::mem::size_of::<Self::ColorType>() + (y as usize) * self.pitch;
-        self.pixels[i] = (color & 0xFF) as u8;
-        self.pixels[i + 1] = (color >> 8) as u8;
+        // Believe or not, doing this with unsafe is a significant optimization
+        // due to the forced runtime bounds checking with [] -.-
+        unsafe {
+            *self.pixels.get_unchecked_mut(i) = (color & 0xFF) as u8;
+            *self.pixels.get_unchecked_mut(i + 1) = (color >> 8) as u8;
+        }
     }
 
     fn sky_color(&self, y: i32) -> Self::ColorType {
