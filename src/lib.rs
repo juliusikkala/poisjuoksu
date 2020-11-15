@@ -4,7 +4,32 @@
 
 // Position of fixed point, in general. Some situations need more precision or
 // more range, so multiples or halves of FP_POS are sometimes used too.
-const FP_POS: i32 = 8;
+// In functions which do lots of fixed point calculations, the point is
+// annotated with comments like FP1, FP2 where the number determines the
+// multiple of FP_POS.
+pub const FP_POS: i32 = 8;
+
+// http://www.azillionmonkeys.com/qed/ulerysqroot.pdf
+fn isqrt(num: i32) -> i32 {
+    let mut v = num;
+    let mut n = 0;
+    let mut b = 0x8000;
+    let mut bshft = 15;
+
+    loop {
+        let tmp = ((n << 1) + b) << bshft;
+        bshft -= 1;
+        if v >= tmp {
+            n += b;
+            v -= tmp;
+        }
+        b >>= 1;
+        if b == 0 {
+            break;
+        }
+    }
+    n
+}
 
 pub trait Painter {
     type ColorType;
@@ -12,6 +37,9 @@ pub trait Painter {
     // This function should draw a single pixel of the given color.
     fn draw(&mut self, x: i32, y: i32, color: &Self::ColorType);
     fn sky_color(&self, y: i32) -> Self::ColorType;
+    // tx world-space X in FP2, t is world-space distance from start.
+    fn road_color(&self, tx: i32, t: i32) -> Self::ColorType;
+    fn road_width(&self) -> i32;
 }
 
 pub enum SegmentStyle {
@@ -104,22 +132,234 @@ where
                     continue;
                 }
                 for i in 0..32 {
-                    if ((v >> i) & 1) == 1 {
-                        continue;
+                    if ((v >> i) & 1) == 0 {
+                        painter.draw(x, y, &color);
                     }
-                    painter.draw(x, y, &color);
                     x += 1;
                 }
             }
         }
     }
 
-    pub fn render<P: Painter>(&mut self, painter: &mut P) {
+    fn update_state_at_segment_end(
+        &self,
+        index: usize,
+        t_start: i32,
+        x_offset: &mut i32, // FP1
+        y_offset: &mut i32, // FP1
+        z_offset: &mut i32, // FP1
+        x_slope: &mut i32,  // FP1
+        y_slope: &mut i32,  // FP1
+    ) {
+        let length = self.segments[index].length - t_start;
+        let y_curve = self.segments[index].y_curve;
+        let x_curve = self.segments[index].x_curve;
+        let z;
+
+        if y_curve == 0 {
+            // Flat plane as far as Y axis is concerned
+            let t_factor = isqrt((1 << (2 * FP_POS)) + *y_slope * *y_slope); // FP1
+
+            z = (length << FP_POS) / t_factor; // FP1
+            *y_offset += (*y_slope * z) >> FP_POS; // FP1
+        } else {
+            let abs_y_curve = if y_curve < 0 { -y_curve } else { y_curve };
+            let tsqrtcurve = isqrt(abs_y_curve << FP_POS); // FP1
+            let z2 = 4 * length / tsqrtcurve;
+            z = isqrt(z2 << FP_POS) << (FP_POS / 2); // FP1
+
+            *y_offset += y_curve * z2 + ((*y_slope * z) >> FP_POS); // FP1
+            *y_slope += (y_curve * z * 2) >> FP_POS; // FP1
+        }
+        *z_offset += z;
+
+        if x_curve == 0 {
+            // X-axis is linear.
+            *x_offset += (*x_slope * z) >> FP_POS; // FP1
+        } else {
+            *x_offset += ((x_curve * z >> FP_POS) * z >> FP_POS) + (*x_slope * z >> FP_POS); // FP1
+            *x_slope += 2 * x_curve * z >> FP_POS; // FP1
+        }
+    }
+
+    fn render_road_line<P: Painter>(
+        &mut self,
+        painter: &mut P,
+        base_tx: i32,  // FP1
+        x_offset: i32, // FP1
+        x_slope: i32,  // FP1
+        x_curve: i32,  // FP1
+        y: i32,
+        z: i32,        // FP1
+        z_local: i32,  // FP1
+        t_global: i32, // FP1
+    ) {
+        let tx_step = base_tx * z; // FP2
+
+        let z_tmp = z_local >> (FP_POS / 2); // FP0.5
+
+        let mut tx =
+            tx_step * -W / 2 + (x_offset << FP_POS) + x_curve * z_tmp * z_tmp + x_slope * z_local; // FP2
+
+        let mut x = 0;
+
+        let road_width = painter.road_width();
+
+        // TODO: Do separate visibility write pass instead, and precalculate
+        // active for-loop bounds.
+        while x < W {
+            let v = &mut self.visibility[((x >> 5) + y * (W / 32)) as usize];
+            for i in 0..32 {
+                if tx > -road_width && tx < road_width {
+                    *v |= 1 << i;
+                    let color = painter.road_color(tx, t_global);
+                    painter.draw(x, y, &color);
+                }
+
+                x += 1;
+                tx += tx_step;
+            }
+        }
+    }
+
+    fn render_road<P: Painter>(
+        &mut self,
+        painter: &mut P,
+        y: &mut i32,
+        x_offset: i32, // FP1
+        y_offset: i32, // FP1
+        z_offset: i32, // FP1
+        x_slope: i32,  // FP1
+        y_slope: i32,  // FP1
+        x_curve: i32,  // FP1
+        y_curve: i32,  // FP1
+        length: i32,   // FP1
+        t_start: i32,  // FP1
+    ) {
+        let base_tx = (1 << FP_POS) / self.near; // FP1
+
+        if y_curve == 0 {
+            // Simple plane
+            let t_factor = isqrt((1 << (2 * FP_POS)) + y_slope * y_slope); // FP1
+            while *y >= 0 {
+                let vy = *y - H / 2;
+                let div = (self.near * y_slope >> FP_POS) - vy;
+                if div == 0 {
+                    break;
+                }
+
+                let z = z_offset + (z_offset * vy - y_offset * self.near) / div; // FP1
+                if z < 0 {
+                    break;
+                }
+
+                let t_local = ((z - z_offset) * t_factor) >> FP_POS; // FP1
+                if t_local < 0 || t_local >= length {
+                    break;
+                }
+
+                self.render_road_line(
+                    painter,
+                    base_tx,
+                    x_offset,
+                    x_slope,
+                    x_curve,
+                    *y,
+                    z,
+                    z - z_offset,
+                    t_start + t_local,
+                );
+                *y -= 1;
+            }
+        } else {
+            // Curved plane
+            let inv_near = (1 << FP_POS) / self.near; // FP1
+            let abs_y_curve = if y_curve < 0 { -y_curve } else { y_curve };
+            let tsqrtcurve = isqrt(abs_y_curve << FP_POS); // FP1
+            while *y >= 0 {
+                let vy = (*y - H / 2) * inv_near; // FP1
+                let vym = vy - y_slope; // FP1
+                let disc = vym * vym + 4 * (((z_offset * vy) >> FP_POS) - y_offset) * y_curve; // FP2
+                if disc < 0 {
+                    break;
+                }
+                let sqrt_disc = isqrt(disc << (FP_POS / 2)) << (FP_POS - FP_POS / 4); // FP2
+                let z = ((vym << FP_POS) - sqrt_disc) / (2 * y_curve); // FP1
+                if z < 0 {
+                    break;
+                }
+
+                let z_tmp = z >> (FP_POS / 2); // FP0.5
+                let t_local = tsqrtcurve * ((z_tmp * z_tmp / 4) >> FP_POS); // FP1
+                if t_local < 0 || t_local >= length {
+                    break;
+                }
+
+                self.render_road_line(
+                    painter,
+                    base_tx,
+                    x_offset,
+                    x_slope,
+                    x_curve,
+                    *y,
+                    z + z_offset,
+                    z,
+                    t_start + t_local,
+                );
+                *y -= 1;
+            }
+        }
+    }
+
+    pub fn render<P: Painter>(
+        &mut self,
+        painter: &mut P,
+        initial_x_offset: i32, // FP1
+        initial_y_offset: i32, // FP1
+    ) {
         for i in 0..compute_visibility_size(W, H) {
             self.visibility[i] = 0;
         }
 
-        // TODO: Render road
+        let mut x_offset = initial_x_offset;
+        let mut y_offset = initial_y_offset;
+        let mut x_slope = 0;
+        let mut y_slope = 0;
+        let mut z_offset = 0;
+        let mut t_start = self.cur_t;
+        let mut y_start = H - 1;
+
+        for render_segment in self.cur_segment..self.segments.len() {
+            let local_t = if render_segment == self.cur_segment {
+                self.cur_t - self.base_t
+            } else {
+                0
+            };
+            let seg = &self.segments[render_segment];
+            self.render_road(
+                painter,
+                &mut y_start,
+                x_offset,
+                y_offset,
+                z_offset,
+                x_slope,
+                y_slope,
+                seg.x_curve,
+                seg.y_curve,
+                seg.length - local_t,
+                t_start,
+            );
+            self.update_state_at_segment_end(
+                render_segment,
+                local_t,
+                &mut x_offset,
+                &mut y_offset,
+                &mut z_offset,
+                &mut x_slope,
+                &mut y_slope,
+            );
+            t_start += seg.length - local_t;
+        }
 
         self.render_sky(painter);
     }
