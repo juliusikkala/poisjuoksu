@@ -1,4 +1,3 @@
-#![feature(nll)]
 use poisjuoksu::{Painter, RoadRenderer, Segment, SegmentStyle, FP_POS};
 use sdl2;
 use sdl2::event::Event;
@@ -106,15 +105,34 @@ fn main() -> Result<(), String> {
             }
         }
         road.advance(1 << FP_POS);
+        let camera_x = (10000.0 * f32::sin(timer.ticks() as f32 * 0.001)) as i32;
+        let camera_y = 10000;
+        let mut x_px = 0;
+        let mut y_px = 0;
+        let mut inv_z = 0;
+        road.get_screen_pos(
+            camera_x,
+            camera_y,
+            10000,
+            12800,
+            0,
+            &mut x_px,
+            &mut y_px,
+            &mut inv_z
+        );
+        println!("{}, {}, {}", x_px, y_px, inv_z);
         screen_buffer.with_lock(
             Rect::new(0, 0, SCREEN_WIDTH as u32, SCREEN_HEIGHT as u32),
             |pixels, pitch| {
                 let mut painter = SdlPainter { pixels, pitch };
                 road.render(
                     &mut painter,
-                    (10000.0 * f32::sin(timer.ticks() as f32 * 0.001)) as i32,
-                    10000,
+                    camera_x,
+                    camera_y
                 );
+                if x_px >= 0 && x_px < 320 && y_px >= 0 && y_px < 240 {
+                    painter.draw(x_px, y_px, &0xF00F);
+                }
             },
         )?;
         ren.copy(&screen_buffer, None, None)?;

@@ -141,17 +141,16 @@ where
         }
     }
 
-    fn update_state_at_segment_end(
+    fn update_state_at_segment_length(
         &self,
         index: usize,
-        t_start: i32,
+        length: i32,
         x_offset: &mut i32, // FP1
         y_offset: &mut i32, // FP1
         z_offset: &mut i32, // FP1
         x_slope: &mut i32,  // FP1
         y_slope: &mut i32,  // FP1
     ) {
-        let length = self.segments[index].length - t_start;
         let y_curve = self.segments[index].y_curve;
         let x_curve = self.segments[index].x_curve;
         let z;
@@ -180,6 +179,57 @@ where
             *x_offset += ((x_curve * z >> FP_POS) * z >> FP_POS) + (*x_slope * z >> FP_POS); // FP1
             *x_slope += 2 * x_curve * z >> FP_POS; // FP1
         }
+    }
+
+    pub fn get_screen_pos(
+        &self,
+        camera_x_offset: i32,
+        camera_y_offset: i32,
+        point_t_offset: i32,
+        point_x_offset: i32,
+        point_y_offset: i32,
+        x_px: &mut i32, // FP1 screen coordinate
+        y_px: &mut i32, // FP1 screen coordinate
+        inv_z: &mut i32  // 1/z, FP3, negative values are behind camera
+    ) {
+        let mut x_offset = camera_x_offset;
+        let mut y_offset = camera_y_offset;
+        let mut z_offset = 0;
+        let mut x_slope = 0;
+        let mut y_slope = 0;
+        let mut t_left = point_t_offset;
+
+        for render_segment in self.cur_segment..self.segments.len() {
+            let seg = &self.segments[render_segment];
+            let length_left = seg.length - (if render_segment == self.cur_segment {
+                self.cur_t - self.base_t
+            } else {
+                0
+            });
+            let length = if t_left < length_left { t_left } else { length_left };
+            self.update_state_at_segment_length(
+                render_segment,
+                length,
+                &mut x_offset,
+                &mut y_offset,
+                &mut z_offset,
+                &mut x_slope,
+                &mut y_slope,
+            );
+            t_left -= length;
+            if t_left == 0 {
+                break;
+            }
+        }
+
+        // Prevent division by zero.
+        if z_offset == 0 {
+            z_offset = 1;
+        }
+
+        *inv_z = (1<<(3*FP_POS))/z_offset;
+        *x_px = W/2+((self.near*(point_x_offset - x_offset))/z_offset);
+        *y_px = H/2+((self.near*(y_offset - point_y_offset))/z_offset);
     }
 
     fn render_road_line<P: Painter>(
@@ -349,9 +399,9 @@ where
                 seg.length - local_t,
                 t_start,
             );
-            self.update_state_at_segment_end(
+            self.update_state_at_segment_length(
                 render_segment,
-                local_t,
+                seg.length - local_t,
                 &mut x_offset,
                 &mut y_offset,
                 &mut z_offset,
