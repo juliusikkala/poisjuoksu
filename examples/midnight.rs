@@ -1,4 +1,4 @@
-use poisjuoksu::{Painter, RoadRenderer, Segment, SegmentStyle, FP_POS};
+use poisjuoksu::{Painter, RoadRenderer, Segment, FP_POS};
 use sdl2;
 use sdl2::event::Event;
 use sdl2::keyboard::Keycode;
@@ -20,6 +20,8 @@ const ROAD_EDGE_X1: i32 = 45 << (FP_POS * 2);
 const ROAD_LINE_WIDTH: i32 = 2 << (FP_POS * 2);
 const ROAD_COLOR: u16 = 0x3187;
 const ROAD_EDGE_COLOR: u16 = 0xBDB5;
+const GROUND_COLOR: u16 = 0x10C4;
+const GROUND_ALT_COLOR: u16 = 0x1924; 
 
 impl<'a> Painter for SdlPainter<'a> {
     type ColorType = u16;
@@ -44,11 +46,18 @@ impl<'a> Painter for SdlPainter<'a> {
 
     fn road_color(&self, tx: i32, t: i32) -> Self::ColorType {
         let atx = if tx < 0 { -tx } else { tx };
-        if atx < ROAD_EDGE_X1 && atx >= ROAD_EDGE_X0 || atx < ROAD_LINE_WIDTH && (t & 0xFFF) < 0x800
-        {
+        if atx < ROAD_EDGE_X1 && atx >= ROAD_EDGE_X0 || atx < ROAD_LINE_WIDTH && (t & 0xFFF) < 0x800 {
             ROAD_EDGE_COLOR
         } else {
             ROAD_COLOR
+        }
+    }
+
+    fn ground_color(&self, tx: i32, t: i32) -> Self::ColorType {
+        if (t & 0x3FFF) < 0x2000 {
+            GROUND_COLOR
+        } else {
+            GROUND_ALT_COLOR
         }
     }
 
@@ -76,13 +85,14 @@ fn main() -> Result<(), String> {
 
     let mut event_pump = sdl_context.event_pump()?;
 
+    use poisjuoksu::SideInclination::*;
     let segments = [
-        Segment::new(SegmentStyle::Field, 200 << FP_POS, 10, 0),
-        Segment::new(SegmentStyle::Field, 100 << FP_POS, -10, -10),
-        Segment::new(SegmentStyle::Field, 100 << FP_POS, 0, 10),
-        Segment::new(SegmentStyle::Field, 65536 << FP_POS, 0, 0),
+        Segment::new((Uphill, Flat), 200 << FP_POS, 10, 0),
+        Segment::new((Uphill, Flat), 100 << FP_POS, -10, -10),
+        Segment::new((Uphill, Flat), 100 << FP_POS, 0, 10),
+        Segment::new((Uphill, Flat), 65536 << FP_POS, 0, 0),
     ];
-    let mut road = RoadRenderer::<SCREEN_WIDTH, SCREEN_HEIGHT>::new(&segments, 32);
+    let mut road = RoadRenderer::new(&segments, 32);
 
     let mut screen_buffer = texture_creator
         .create_texture(
@@ -111,6 +121,7 @@ fn main() -> Result<(), String> {
         let mut y_px = 0;
         let mut inv_z = 0;
         road.get_screen_pos(
+            (SCREEN_WIDTH, SCREEN_HEIGHT),
             camera_x,
             camera_y,
             10000,
@@ -127,8 +138,9 @@ fn main() -> Result<(), String> {
                 let mut painter = SdlPainter { pixels, pitch };
                 road.render(
                     &mut painter,
+                    (SCREEN_WIDTH, SCREEN_HEIGHT),
                     camera_x,
-                    camera_y
+                    camera_y,
                 );
                 if x_px >= 0 && x_px < 320 && y_px >= 0 && y_px < 240 {
                     painter.draw(x_px, y_px, &0xF00F);
