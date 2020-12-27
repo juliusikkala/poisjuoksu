@@ -276,6 +276,10 @@ impl<'a> RoadRenderer<'a> {
                     if x0 >= w {
                         y_start -= x0 - w + 1;
                         x0 = w-1;
+
+                        if y_start <= 0 || horizon[(y_start-1) as usize].begin as i32 > x0 {
+                            continue;
+                        }
                     }
 
                     for y0 in (0..(y_start)).rev() {
@@ -330,6 +334,10 @@ impl<'a> RoadRenderer<'a> {
                     if x0 < 0 {
                         y_start += x0;
                         x0 = 0;
+
+                        if y_start <= 0 || horizon[(y_start-1) as usize].end <= 0 {
+                            continue;
+                        }
                     }
 
                     for y0 in (0..(y_start)).rev() {
@@ -358,7 +366,33 @@ impl<'a> RoadRenderer<'a> {
                 line.end = w as i16;
             },
             SideInclination::Downhill => {
-                // TODO
+                /*
+                for x in road_right..(line.end as i32) {
+                    let mut x0 = x;
+                    let mut y_start = y;
+                    if x0 < 0 {
+                        y_start -= x0;
+                        x0 = 0;
+                    }
+
+                    for y0 in y_start..h {
+                        let l = &mut horizon[y0 as usize];
+
+                        if l.begin as i32 <= x0 {
+                        }
+                        l.end = l.end.min(x0 as i16);
+                        painter.draw(x0, y0, &side_color);
+
+                        x0 += 1;
+                        // TODO: Do this by calculating the active range
+                        // instead!
+                        if x0 >= w {
+                            break;
+                        }
+                    }
+                }
+                */
+
                 if line.end < w as i16 {
                     line.end = w as i16;
                 } else {

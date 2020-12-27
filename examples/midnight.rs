@@ -12,6 +12,7 @@ const SCREEN_HEIGHT: i32 = 240;
 struct SdlPainter<'a> {
     pixels: &'a mut [u8],
     pitch: usize,
+    count: i32,
 }
 
 const ROAD_WIDTH: i32 = 50 << (FP_POS * 2);
@@ -27,6 +28,7 @@ impl<'a> Painter for SdlPainter<'a> {
     type ColorType = u16;
 
     fn draw(&mut self, x: i32, y: i32, color: &Self::ColorType) {
+        self.count += 1;
         let i = (x as usize) * std::mem::size_of::<Self::ColorType>() + (y as usize) * self.pitch;
         // Believe or not, doing this with unsafe is a significant optimization
         // due to the forced runtime bounds checking with [] -.-
@@ -87,10 +89,10 @@ fn main() -> Result<(), String> {
 
     use poisjuoksu::SideInclination::*;
     let segments = [
-        Segment::new((Uphill, Flat), 200 << FP_POS, 10, 0),
-        Segment::new((Uphill, Flat), 100 << FP_POS, -10, -10),
-        Segment::new((Uphill, Flat), 100 << FP_POS, 0, 10),
-        Segment::new((Uphill, Flat), 65536 << FP_POS, 0, 0),
+        Segment::new((Uphill, Uphill), 200 << FP_POS, 10, 0),
+        Segment::new((Uphill, Uphill), 100 << FP_POS, -10, -10),
+        Segment::new((Uphill, Uphill), 100 << FP_POS, 0, 10),
+        Segment::new((Uphill, Uphill), 65536 << FP_POS, 0, 0),
     ];
     let mut road = RoadRenderer::new(&segments, 32);
 
@@ -134,7 +136,7 @@ fn main() -> Result<(), String> {
         screen_buffer.with_lock(
             Rect::new(0, 0, SCREEN_WIDTH as u32, SCREEN_HEIGHT as u32),
             |pixels, pitch| {
-                let mut painter = SdlPainter { pixels, pitch };
+                let mut painter = SdlPainter { pixels, pitch, count: 0 };
                 road.render::<SdlPainter, SCREEN_WIDTH, SCREEN_HEIGHT>(
                     &mut painter,
                     camera_x,
@@ -143,6 +145,7 @@ fn main() -> Result<(), String> {
                 if x_px >= 0 && x_px < 320 && y_px >= 0 && y_px < 240 {
                     painter.draw(x_px, y_px, &0xF00F);
                 }
+                println!("{} vs {}", painter.count, SCREEN_WIDTH*SCREEN_HEIGHT);
             },
         )?;
         ren.copy(&screen_buffer, None, None)?;
