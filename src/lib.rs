@@ -85,8 +85,8 @@ pub struct RoadRenderer<'a> {
 pub struct LineVisibility {
     // If the line is above road horizon, the range between begin and end is
     // available. Otherwise, it is masked.
-    begin: i16,
-    end: i16,
+    begin: i32,
+    end: i32,
 }
 
 impl<'a> RoadRenderer<'a> {
@@ -284,7 +284,7 @@ impl<'a> RoadRenderer<'a> {
 
                     for y0 in (0..(y_start)).rev() {
                         let l = &mut visibility[y0 as usize];
-                        l.begin = l.begin.max(x0 as i16 + 1);
+                        l.begin = l.begin.max(x0 + 1);
 
                         if l.end as i32 > x0 {
                             painter.draw(x0, y0, &side_color);
@@ -314,10 +314,10 @@ impl<'a> RoadRenderer<'a> {
                         let mut x0 = x;
                         for y0 in y_start..h {
                             let l = &mut visibility[y0 as usize];
-                            if l.begin <= x0 as i16 {
+                            if l.begin <= x0 {
                                 break;
                             } else {
-                                l.begin = x0 as i16;
+                                l.begin = x0;
                                 painter.draw(x0, y0, &side_color);
                             }
                             x0 -= 1;
@@ -333,7 +333,7 @@ impl<'a> RoadRenderer<'a> {
                 if line.begin > 0 {
                     line.begin = 0;
                 } else {
-                    line.begin = road_begin as i16;
+                    line.begin = road_begin;
                 }
             }
         }
@@ -364,7 +364,7 @@ impl<'a> RoadRenderer<'a> {
 
                     for y0 in (0..(y_start)).rev() {
                         let l = &mut visibility[y0 as usize];
-                        l.end = l.end.min(x0 as i16);
+                        l.end = l.end.min(x0);
 
                         if l.begin as i32 <= x0 {
                             painter.draw(x0, y0, &side_color);
@@ -378,14 +378,14 @@ impl<'a> RoadRenderer<'a> {
                         }
                     }
                 }
-                line.end = w as i16;
+                line.end = w;
             },
             SideInclination::Flat => {
                 let color = painter.ground_color(0, t_global);
                 for x in road_end..(line.end as i32) {
                     painter.draw(x, y, &color);
                 }
-                line.end = w as i16;
+                line.end = w;
             },
             SideInclination::Downhill => {
                 let y_start = y+1;
@@ -395,10 +395,10 @@ impl<'a> RoadRenderer<'a> {
                         let mut x0 = x;
                         for y0 in y_start..h {
                             let l = &mut visibility[y0 as usize];
-                            if l.end >= x0 as i16 + 1 {
+                            if l.end >= x0 + 1 {
                                 break;
                             } else {
-                                l.end = x0 as i16 + 1;
+                                l.end = x0 + 1;
                                 painter.draw(x0, y0, &side_color);
                             }
                             x0 += 1;
@@ -411,10 +411,10 @@ impl<'a> RoadRenderer<'a> {
                     }
                 }
 
-                if line.end < w as i16 {
-                    line.end = w as i16;
+                if line.end < w {
+                    line.end = w;
                 } else {
-                    line.end = road_end as i16;
+                    line.end = road_end;
                 }
             }
         }
@@ -538,7 +538,7 @@ impl<'a> RoadRenderer<'a> {
         // W and H would not have to be const generics and could be dynamically
         // determined instead.
         let mut visibility = [
-            LineVisibility{begin: 0, end: W as i16}; i32_to_usize(H)
+            LineVisibility{begin: 0, end: W}; i32_to_usize(H)
         ];
 
         for render_segment in self.cur_segment..self.segments.len() {
