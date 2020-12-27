@@ -298,14 +298,32 @@ impl<'a> RoadRenderer<'a> {
         }
 
         // Middle road
-        for x in horizon.road_left..(horizon.road_right+1) {
+        let mut road_start = horizon.road_horizon - horizon.left_uphill;
+        let mut road_end = w - horizon.road_horizon + horizon.right_uphill;
+        if road_start < horizon.road_left {
+            road_start = horizon.road_left;
+        } else {
+            tx += tx_step * (road_start - horizon.road_left);
+        }
+
+        if road_end > horizon.road_right+1 {
+            road_end = horizon.road_right+1;
+        }
+
+        for x in road_start..road_end {
             let color = painter.road_color(tx, t_global);
             painter.draw(x, horizon.road_horizon, &color);
             tx += tx_step;
         }
 
+        tx += tx_step * (road_end - horizon.road_right - 1);
+
         // Right road side
-        for x in (horizon.road_right+1)..w {
+        if road_end < road_start {
+            road_end = road_start;
+        }
+
+        for x in road_end..w {
             let color = painter.ground_color(tx, t_global);
             painter.draw(x, horizon.road_horizon, &color);
             tx += tx_step;
