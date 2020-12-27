@@ -257,19 +257,117 @@ impl<'a> RoadRenderer<'a> {
             tx_step * -w / 2 + (x_offset << FP_POS) + x_curve * z_tmp * z_tmp + x_slope * z_local; // FP2
 
         let road_width = painter.road_width();
-        let road_left = ((tx_step - 1 - road_width - tx) / tx_step).max(0).min(w-1);
-        let road_right = ((road_width - tx) / tx_step).max(0).min(w-1)+1;
+        let road_left = 1 - (1 + road_width + tx) / tx_step;
+        let road_right = 1 + (road_width - tx) / tx_step;
 
-        tx += tx_step * road_left;
-        horizon[y as usize].road = true;
-        horizon[y as usize].begin = road_left as i16;
-        horizon[y as usize].end = road_right as i16;
+        let mut line = horizon[y as usize];
+        let road_begin = road_left.max(line.begin as i32).min(line.end as i32);
+        let road_end = road_right.max(line.begin as i32).min(line.end as i32);
 
-        for x in road_left..road_right {
+        line.road = true;
+
+        let side_color = painter.ground_color(0, t_global);
+        // Left side of road
+        match style.0 {
+            SideInclination::Uphill => {
+                for x in (line.begin as i32)..road_left {
+                    let mut x0 = x;
+                    let mut y_start = y+1;
+                    if x0 >= w {
+                        y_start -= x0 - w + 1;
+                        x0 = w-1;
+                    }
+
+                    for y0 in (0..(y_start)).rev() {
+                        let l = &mut horizon[y0 as usize];
+                        l.begin = l.begin.max(x0 as i16 + 1);
+
+                        if l.end as i32 > x0 {
+                            painter.draw(x0, y0, &side_color);
+                        }
+                        x0 -= 1;
+                        // TODO: Do this by calculating the active range
+                        // instead!
+                        if x0 < 0 {
+                            break;
+                        }
+                    }
+                }
+
+                line.begin = 0;
+            },
+            SideInclination::Flat => {
+                for x in (line.begin as i32)..road_begin {
+                    painter.draw(x, y, &side_color);
+                }
+                line.begin = 0;
+            },
+            SideInclination::Downhill => {
+                // TODO
+                if line.begin > 0 {
+                    line.begin = 0;
+                } else {
+                    line.begin = road_begin as i16;
+                }
+            }
+        }
+
+        // Center part of road, could be fully hidden in which case
+        // road_begin >= road_end.
+        tx += tx_step * road_begin;
+        for x in road_begin..road_end {
             let color = painter.road_color(tx, t_global);
             painter.draw(x, y, &color);
             tx += tx_step;
         }
+
+        // Right side of road
+        match style.1 {
+            SideInclination::Uphill => {
+                for x in road_right..(line.end as i32) {
+                    let mut x0 = x;
+                    let mut y_start = y+1;
+                    if x0 < 0 {
+                        y_start += x0;
+                        x0 = 0;
+                    }
+
+                    for y0 in (0..(y_start)).rev() {
+                        let l = &mut horizon[y0 as usize];
+                        l.end = l.end.min(x0 as i16);
+
+                        if l.begin as i32 <= x0 {
+                            painter.draw(x0, y0, &side_color);
+                        }
+
+                        x0 += 1;
+                        // TODO: Do this by calculating the active range
+                        // instead!
+                        if x0 >= w {
+                            break;
+                        }
+                    }
+                }
+                line.end = w as i16;
+            },
+            SideInclination::Flat => {
+                let color = painter.ground_color(0, t_global);
+                for x in road_end..(line.end as i32) {
+                    painter.draw(x, y, &color);
+                }
+                line.end = w as i16;
+            },
+            SideInclination::Downhill => {
+                // TODO
+                if line.end < w as i16 {
+                    line.end = w as i16;
+                } else {
+                    line.end = road_end as i16;
+                }
+            }
+        }
+
+        horizon[y as usize] = line;
     }
 
     fn render_road<P: Painter>(
