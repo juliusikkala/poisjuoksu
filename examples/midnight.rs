@@ -150,10 +150,10 @@ fn main() -> Result<(), String> {
                     camera_x,
                     camera_y,
                 );
-                if x_px >= 0 && x_px < 320 && y_px >= 0 && y_px < 240 {
-                    painter.draw(x_px, y_px, &0xF00F);
-                }
-                println!("{} vs {}", painter.count, SCREEN_WIDTH*SCREEN_HEIGHT);
+                //if x_px >= 0 && x_px < 320 && y_px >= 0 && y_px < 240 {
+                //    painter.draw(x_px, y_px, &0xF00F);
+                //}
+                //println!("{} vs {}", painter.count, SCREEN_WIDTH*SCREEN_HEIGHT);
             },
         )?;
         ren.copy(&screen_buffer, None, None)?;
