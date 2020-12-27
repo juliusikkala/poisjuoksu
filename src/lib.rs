@@ -1,4 +1,7 @@
 #![no_std]
+#![allow(incomplete_features)]
+#![feature(const_generics, const_evaluatable_checked)]
+
 
 // Position of fixed point, in general. Some situations need more precision or
 // more range, so multiples or halves of FP_POS are sometimes used too.
@@ -66,9 +69,8 @@ impl Segment {
     }
 }
 
-const fn compute_visibility_size(w: i32, h: i32) -> usize {
-    (h * (w / 32)) as usize
-}
+// The const generics implementation in Rust is just wonderful.
+const fn i32_to_usize(n: i32) -> usize { n as usize }
 
 pub struct RoadRenderer<'a> {
     segments: &'a [Segment], // The road is built out of segments with constant curvature and style.
@@ -78,23 +80,14 @@ pub struct RoadRenderer<'a> {
     base_t: i32,             // Distance of the current segment from the start of the road
 }
 
-// With these parameters, it should be possible to describe the horizon
-// shape perfectly without needing a visibility buffer.
-struct Horizon {
-    // These three are the horizon on the left side of the road. All can be in
-    // effect simultaneosly, which does make correct rendering a bit difficult...
-    left_uphill: i32, // Left-of-road, y-coordinate where uphill diagonal intersects left edge of screen.
-    left_flat: i32, // Left-of-road, y-coordinate where flat horizon resides.
-    left_downhill: i32, // Left-of-road, y-coordinate where downhill diagonal intersects left edge of screen.
-    // These three define the state of the road at the horizon.
-    road_left: i32, // x-coordinate of the left edge of the road.
-    road_horizon: i32, // Road horizon y-coordinate.
-    road_right: i32, // x-coordinate of the right edge of the road.
-    // These are the same as the left side parameters, except intersections
-    // occur at the right edge of the screen.
-    right_uphill: i32,
-    right_flat: i32,
-    right_downhill: i32,
+// Per-line visibility information, needed for road rendering.
+#[derive(Copy, Clone)]
+pub struct LineVisibility {
+    // If true, the range between end and begin is masked. Otherwise, it is
+    // available.
+    road: bool,
+    begin: i16,
+    end: i16,
 }
 
 impl<'a> RoadRenderer<'a> {
@@ -125,18 +118,26 @@ impl<'a> RoadRenderer<'a> {
         self.advance(t);
     }
 
-    fn render_sky<P: Painter>(&mut self, painter: &mut P, (w, h): (i32, i32), horizon: &Horizon) {
-        let mut visibility_index = 0;
-        // TODO: correct algorithm.
-        for y in 0..horizon.road_horizon {
+    fn render_sky<P: Painter>(
+        &mut self,
+        painter: &mut P,
+        (w, h): (i32, i32),
+        horizon: &[LineVisibility]
+    ) {
+        for y in 0..h {
             let color = painter.sky_color(y);
-            let mut min_x = y - horizon.left_uphill;
-            let mut max_x = w - 1 - y - horizon.right_uphill;
-            if min_x < 0 {
-                min_x = 0;
-            }
-            for x in min_x..w {
-                painter.draw(x, y, &color);
+            let line = &horizon[y as usize];
+            if line.road {
+                for x in 0..(line.begin as i32) {
+                    painter.draw(x, y, &color);
+                }
+                for x in (line.end as i32)..w {
+                    painter.draw(x, y, &color);
+                }
+            } else {
+                for x in (line.begin as i32)..(line.end as i32) {
+                    painter.draw(x, y, &color);
+                }
             }
         }
     }
@@ -242,10 +243,11 @@ impl<'a> RoadRenderer<'a> {
         x_offset: i32, // FP1
         x_slope: i32,  // FP1
         x_curve: i32,  // FP1
+        y: i32,
         z: i32,        // FP1
         z_local: i32,  // FP1
         t_global: i32, // FP1
-        horizon: &mut Horizon,
+        horizon: &mut [LineVisibility],
     ) {
         let tx_step = base_tx * z; // FP2
 
@@ -255,77 +257,17 @@ impl<'a> RoadRenderer<'a> {
             tx_step * -w / 2 + (x_offset << FP_POS) + x_curve * z_tmp * z_tmp + x_slope * z_local; // FP2
 
         let road_width = painter.road_width();
-        horizon.road_left = ((tx_step - 1 - road_width - tx) / tx_step).max(0).min(w-1);
-        horizon.road_right = ((road_width - tx) / tx_step).max(0).min(w-1);
+        let road_left = ((tx_step - 1 - road_width - tx) / tx_step).max(0).min(w-1);
+        let road_right = ((road_width - tx) / tx_step).max(0).min(w-1)+1;
 
-        // Left road side
-        match style.0 {
-            SideInclination::Uphill => {
-                let mut y = horizon.road_horizon - horizon.road_left;
-                let line_width = horizon.left_uphill - y;
-                if line_width > 0 {
-                    horizon.left_uphill = y;
+        tx += tx_step * road_left;
+        horizon[y as usize].road = true;
+        horizon[y as usize].begin = road_left as i16;
+        horizon[y as usize].end = road_right as i16;
 
-                    // TODO: Limit x where y is on-screen?
-                    for x in 0..horizon.road_left {
-                        if y >= 0 {
-                            let color = painter.ground_color(tx, t_global);
-                            for x0 in (x+1-line_width)..(x+1) {
-                                // TODO: Avoid this condition somehow?
-                                if x0 >= 0 {
-                                    painter.draw(x0, y, &color);
-                                }
-                            }
-                        }
-                        tx += tx_step;
-                        y += 1;
-                    }
-                } else {
-                    tx += horizon.road_left * tx_step;
-                }
-            },
-            SideInclination::Flat => {
-                horizon.left_flat = horizon.road_horizon;
-                for x in 0..horizon.road_left {
-                    let color = painter.ground_color(tx, t_global);
-                    painter.draw(x, horizon.road_horizon, &color);
-                    tx += tx_step;
-                }
-            },
-            SideInclination::Downhill => {
-                // TODO
-            }
-        }
-
-        // Middle road
-        let mut road_start = horizon.road_horizon - horizon.left_uphill;
-        let mut road_end = w - horizon.road_horizon + horizon.right_uphill;
-        if road_start < horizon.road_left {
-            road_start = horizon.road_left;
-        } else {
-            tx += tx_step * (road_start - horizon.road_left);
-        }
-
-        if road_end > horizon.road_right+1 {
-            road_end = horizon.road_right+1;
-        }
-
-        for x in road_start..road_end {
+        for x in road_left..road_right {
             let color = painter.road_color(tx, t_global);
-            painter.draw(x, horizon.road_horizon, &color);
-            tx += tx_step;
-        }
-
-        tx += tx_step * (road_end - horizon.road_right - 1);
-
-        // Right road side
-        if road_end < road_start {
-            road_end = road_start;
-        }
-
-        for x in road_end..w {
-            let color = painter.ground_color(tx, t_global);
-            painter.draw(x, horizon.road_horizon, &color);
+            painter.draw(x, y, &color);
             tx += tx_step;
         }
     }
@@ -334,6 +276,7 @@ impl<'a> RoadRenderer<'a> {
         &mut self,
         painter: &mut P,
         (w, h): (i32, i32),
+        y: &mut i32,
         style: (SideInclination, SideInclination),
         x_offset: i32, // FP1
         y_offset: i32, // FP1
@@ -344,16 +287,15 @@ impl<'a> RoadRenderer<'a> {
         y_curve: i32,  // FP1
         length: i32,   // FP1
         t_start: i32,  // FP1
-        horizon: &mut Horizon,
+        horizon: &mut [LineVisibility],
     ) {
         let base_tx = (1 << FP_POS) / self.near; // FP1
 
         if y_curve == 0 {
             // Simple plane
             let t_factor = isqrt((1 << (2 * FP_POS)) + y_slope * y_slope); // FP1
-            while horizon.road_horizon > 0 {
-                let y = horizon.road_horizon - 1;
-                let vy = y - h / 2;
+            while *y >= 0 {
+                let vy = *y - h / 2;
                 let div = (self.near * y_slope >> FP_POS) - vy;
                 if div == 0 {
                     break;
@@ -369,7 +311,6 @@ impl<'a> RoadRenderer<'a> {
                     break;
                 }
 
-                horizon.road_horizon = y;
                 self.render_road_line(
                     painter,
                     (w, h),
@@ -378,20 +319,21 @@ impl<'a> RoadRenderer<'a> {
                     x_offset,
                     x_slope,
                     x_curve,
+                    *y,
                     z,
                     z - z_offset,
                     t_start + t_local,
                     horizon
                 );
+                *y -= 1;
             }
         } else {
             // Curved plane
             let inv_near = (1 << FP_POS) / self.near; // FP1
             let abs_y_curve = if y_curve < 0 { -y_curve } else { y_curve };
             let tsqrtcurve = isqrt(abs_y_curve << FP_POS); // FP1
-            while horizon.road_horizon > 0 {
-                let y = horizon.road_horizon - 1;
-                let vy = (y - h / 2) * inv_near; // FP1
+            while *y >= 0 {
+                let vy = (*y - h / 2) * inv_near; // FP1
                 let vym = vy - y_slope; // FP1
                 let disc = vym * vym + 4 * (((z_offset * vy) >> FP_POS) - y_offset) * y_curve; // FP2
                 if disc < 0 {
@@ -409,7 +351,6 @@ impl<'a> RoadRenderer<'a> {
                     break;
                 }
 
-                horizon.road_horizon = y;
                 self.render_road_line(
                     painter,
                     (w, h),
@@ -418,39 +359,38 @@ impl<'a> RoadRenderer<'a> {
                     x_offset,
                     x_slope,
                     x_curve,
+                    *y,
                     z + z_offset,
                     z,
                     t_start + t_local,
                     horizon
                 );
+                *y -= 1;
             }
         }
     }
 
-    pub fn render<P: Painter>(
+    pub fn render<P: Painter, const W: i32, const H: i32>(
         &mut self,
         painter: &mut P,
-        (w, h): (i32, i32),
         initial_x_offset: i32, // FP1
         initial_y_offset: i32, // FP1
-    ) {
+    ) where [LineVisibility; i32_to_usize(H)]: Sized
+    {
         let mut x_offset = initial_x_offset;
         let mut y_offset = initial_y_offset;
         let mut x_slope = 0;
         let mut y_slope = 0;
         let mut z_offset = 0;
         let mut t_start = self.cur_t;
-        let mut horizon = Horizon{
-            left_uphill: h,
-            left_flat: h,
-            left_downhill: -1,
-            road_left: 0,
-            road_horizon: h,
-            road_right: w,
-            right_uphill: h,
-            right_flat: h,
-            right_downhill: -1,
-        };
+        let mut y_start = H - 1;
+        // If only VLAs were supported in Rust... If they were supported,
+        // W and H would not have to be const generics and could be dynamically
+        // determined instead.
+        let mut horizon = [
+            LineVisibility{road: false, begin: 0, end: W as i16};
+            i32_to_usize(H)
+        ];
 
         for render_segment in self.cur_segment..self.segments.len() {
             let local_t = if render_segment == self.cur_segment {
@@ -461,7 +401,8 @@ impl<'a> RoadRenderer<'a> {
             let seg = &self.segments[render_segment];
             self.render_road(
                 painter,
-                (w, h),
+                (W, H),
+                &mut y_start,
                 seg.side_style,
                 x_offset,
                 y_offset,
@@ -486,6 +427,6 @@ impl<'a> RoadRenderer<'a> {
             t_start += seg.length - local_t;
         }
 
-        self.render_sky(painter, (w, h), &horizon);
+        self.render_sky(painter, (W, H), &horizon);
     }
 }

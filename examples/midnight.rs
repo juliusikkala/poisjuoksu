@@ -131,14 +131,12 @@ fn main() -> Result<(), String> {
             &mut y_px,
             &mut inv_z
         );
-        println!("{}, {}, {}", x_px, y_px, inv_z);
         screen_buffer.with_lock(
             Rect::new(0, 0, SCREEN_WIDTH as u32, SCREEN_HEIGHT as u32),
             |pixels, pitch| {
                 let mut painter = SdlPainter { pixels, pitch };
-                road.render(
+                road.render::<SdlPainter, SCREEN_WIDTH, SCREEN_HEIGHT>(
                     &mut painter,
-                    (SCREEN_WIDTH, SCREEN_HEIGHT),
                     camera_x,
                     camera_y,
                 );
