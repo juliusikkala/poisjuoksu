@@ -89,10 +89,10 @@ fn main() -> Result<(), String> {
 
     use poisjuoksu::SideInclination::*;
     let segments = [
-        Segment::new((Uphill, Uphill), 200 << FP_POS, 10, 0),
-        Segment::new((Uphill, Uphill), 100 << FP_POS, -10, -10),
-        Segment::new((Uphill, Uphill), 100 << FP_POS, 0, 10),
-        Segment::new((Uphill, Uphill), 65536 << FP_POS, 0, 0),
+        Segment::new((Downhill, Uphill), 200 << FP_POS, -10, 0),
+        Segment::new((Downhill, Uphill), 100 << FP_POS, 10, -10),
+        Segment::new((Downhill, Uphill), 100 << FP_POS, 0, 10),
+        Segment::new((Downhill, Uphill), 65536 << FP_POS, 0, 0),
     ];
     let mut road = RoadRenderer::new(&segments, 32);
 
@@ -117,7 +117,7 @@ fn main() -> Result<(), String> {
             }
         }
         road.advance(1 << FP_POS);
-        let camera_x = (10000.0 * f32::sin(timer.ticks() as f32 * 0.001)) as i32;
+        let camera_x = (-10000.0 * f32::sin(timer.ticks() as f32 * 0.001)) as i32;
         let camera_y = 10000;
         let mut x_px = 0;
         let mut y_px = 0;
@@ -137,6 +137,14 @@ fn main() -> Result<(), String> {
             Rect::new(0, 0, SCREEN_WIDTH as u32, SCREEN_HEIGHT as u32),
             |pixels, pitch| {
                 let mut painter = SdlPainter { pixels, pitch, count: 0 };
+
+                /*
+                for x in 0..SCREEN_WIDTH {
+                    for y in 0..SCREEN_HEIGHT {
+                        painter.draw(x, y, &0xF000);
+                    }
+                }
+                */
                 road.render::<SdlPainter, SCREEN_WIDTH, SCREEN_HEIGHT>(
                     &mut painter,
                     camera_x,
