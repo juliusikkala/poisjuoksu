@@ -89,10 +89,50 @@ fn main() -> Result<(), String> {
 
     use poisjuoksu::SideInclination::*;
     let segments = [
-        Segment::new((Downhill, Uphill), 200 << FP_POS, -10, 0),
-        Segment::new((Downhill, Uphill), 100 << FP_POS, 10, -10),
-        Segment::new((Downhill, Uphill), 100 << FP_POS, 0, 10),
-        Segment::new((Downhill, Uphill), 65536 << FP_POS, 0, 0),
+        Segment::new((Flat, Flat), 200 << FP_POS, 0, 0),
+        Segment::new((Flat, Flat), 100 << FP_POS, -20, 0),
+        Segment::new((Flat, Flat), 400 << FP_POS, 0, 0),
+        Segment::new((Flat, Flat), 100 << FP_POS, 20, 0),
+        Segment::new((Flat, Flat), 400 << FP_POS, 2, 0),
+        Segment::new((Flat, Flat), 300 << FP_POS, -2, 0),
+        Segment::new((Flat, Flat), 500 << FP_POS, -3, -1),
+        Segment::new((Flat, Flat), 500 << FP_POS, 0, 0),
+        Segment::new((Flat, Flat), 600 << FP_POS, 3, -1),
+        Segment::new((Flat, Flat), 200 << FP_POS, 0, 0),
+        Segment::new((Flat, Flat), 200 << FP_POS, -5, -1),
+        Segment::new((Flat, Flat), 700 << FP_POS, 0, 2),
+        Segment::new((Flat, Flat), 100 << FP_POS, -7, 0),
+        Segment::new((Flat, Flat), 50 << FP_POS, 30, 0),
+        Segment::new((Flat, Uphill), 100 << FP_POS, 20, 0),
+        Segment::new((Flat, Uphill), 100 << FP_POS, 0, -2),
+        Segment::new((Flat, Uphill), 50 << FP_POS, -10, 0),
+        Segment::new((Flat, Uphill), 50 << FP_POS, 10, 0),
+        Segment::new((Flat, Uphill), 100 << FP_POS, -2, -2),
+        Segment::new((Downhill, Uphill), 300 << FP_POS, 4, -1),
+        Segment::new((Downhill, Uphill), 200 << FP_POS, 0, -1),
+        Segment::new((Downhill, Uphill), 50 << FP_POS, -10, -1),
+        Segment::new((Downhill, Uphill), 100 << FP_POS, -3, 0),
+        Segment::new((Downhill, Uphill), 50 << FP_POS, -7, 2),
+        Segment::new((Downhill, Uphill), 200 << FP_POS, 0, 0),
+        Segment::new((Downhill, Uphill), 50 << FP_POS, -3, 0),
+        Segment::new((Downhill, Uphill), 100 << FP_POS, 0, 1),
+        Segment::new((Downhill, Uphill), 10 << FP_POS, -5, 0),
+        Segment::new((Downhill, Uphill), 50 << FP_POS, 0, 0),
+        Segment::new((Downhill, Uphill), 50 << FP_POS, -3, 0),
+        Segment::new((Downhill, Uphill), 50 << FP_POS, 8, 2),
+        Segment::new((Downhill, Uphill), 100 << FP_POS, 0, 1),
+        Segment::new((Downhill, Uphill), 20 << FP_POS, -5, 0),
+        Segment::new((Downhill, Uphill), 50 << FP_POS, 0, 3),
+        Segment::new((Downhill, Uphill), 20 << FP_POS, 5, 0),
+        Segment::new((Downhill, Uphill), 40 << FP_POS, 0, -1),
+        Segment::new((Downhill, Uphill), 100 << FP_POS, 2, -2),
+        Segment::new((Downhill, Uphill), 10 << FP_POS, 20, -2),
+        Segment::new((Downhill, Uphill), 50 << FP_POS, 2, 0),
+        Segment::new((Downhill, Uphill), 30 << FP_POS, 10, 2),
+        Segment::new((Downhill, Uphill), 200 << FP_POS, 0, -1),
+        Segment::new((Flat, Flat), 100 << FP_POS, -5, -1),
+        Segment::new((Flat, Flat), 100 << FP_POS, 0, 5),
+        Segment::new((Flat, Flat), 100 << FP_POS, 0, 100),
     ];
     let mut road = RoadRenderer::new(&segments, 32);
 
@@ -149,6 +189,7 @@ fn main() -> Result<(), String> {
                     &mut painter,
                     camera_x,
                     camera_y,
+                    10000*FP_POS
                 );
                 //if x_px >= 0 && x_px < 320 && y_px >= 0 && y_px < 240 {
                 //    painter.draw(x_px, y_px, &0xF00F);

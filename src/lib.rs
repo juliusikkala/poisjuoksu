@@ -437,6 +437,7 @@ impl<'a> RoadRenderer<'a> {
         y_curve: i32,  // FP1
         length: i32,   // FP1
         t_start: i32,  // FP1
+        max_z: i32, // FP1
         visibility: &mut [LineVisibility],
     ) {
         let base_tx = (1 << FP_POS) / self.near; // FP1
@@ -452,12 +453,12 @@ impl<'a> RoadRenderer<'a> {
                 }
 
                 let z = z_offset + (z_offset * vy - y_offset * self.near) / div; // FP1
-                if z < 0 {
+                if z < 0 || z > max_z {
                     break;
                 }
 
                 let t_local = ((z - z_offset) * t_factor) >> FP_POS; // FP1
-                if t_local < 0 || t_local >= length {
+                if t_local < -64 || t_local >= length {
                     break;
                 }
 
@@ -491,13 +492,13 @@ impl<'a> RoadRenderer<'a> {
                 }
                 let sqrt_disc = isqrt(disc << (FP_POS / 2)) << (FP_POS - FP_POS / 4); // FP2
                 let z = ((vym << FP_POS) - sqrt_disc) / (2 * y_curve); // FP1
-                if z < 0 {
+                if z < 0 || z > max_z {
                     break;
                 }
 
                 let z_tmp = z >> (FP_POS / 2); // FP0.5
                 let t_local = tsqrtcurve * ((z_tmp * z_tmp / 4) >> FP_POS); // FP1
-                if t_local < 0 || t_local >= length {
+                if t_local < -64 || t_local >= length {
                     break;
                 }
 
@@ -525,6 +526,7 @@ impl<'a> RoadRenderer<'a> {
         painter: &mut P,
         initial_x_offset: i32, // FP1
         initial_y_offset: i32, // FP1
+        max_z: i32
     ) where [LineVisibility; i32_to_usize(H)]: Sized
     {
         let mut x_offset = initial_x_offset;
@@ -562,6 +564,7 @@ impl<'a> RoadRenderer<'a> {
                 seg.y_curve,
                 seg.length - local_t,
                 t_start,
+                max_z,
                 &mut visibility
             );
             self.update_state_at_segment_length(
@@ -574,6 +577,9 @@ impl<'a> RoadRenderer<'a> {
                 &mut y_slope,
             );
             t_start += seg.length - local_t;
+            if z_offset > max_z {
+                break;
+            }
         }
 
         self.render_sky(painter, (W, H), y_start+1, &visibility);
